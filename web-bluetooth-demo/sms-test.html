@@ -293,21 +293,55 @@
     const MQTT_URL = 'wss://broker.emqx.io:8084/mqtt';
     const MQTT_TOPIC = 'gbv-safety-watch/radebexf/demo-alert';
     let mqttClient = null;
+    let mqttReady = false;
 
-    function ensureMqtt() {
-      if (mqttClient || typeof mqtt === 'undefined') return mqttClient;
+    // Connect eagerly on page load (not at trigger time) so the connection is
+    // established well before an alert needs to be published — this avoids a
+    // connect/publish race where the first message was dropped.
+    function initMqtt() {
+      if (typeof mqtt === 'undefined') return;
       try {
-        mqttClient = mqtt.connect(MQTT_URL, { connectTimeout: 8000, reconnectPeriod: 0 });
+        mqttClient = mqtt.connect(MQTT_URL, {
+          connectTimeout: 8000,
+          reconnectPeriod: 4000, // keep retrying so it's ready when needed
+          keepalive: 30,
+        });
+        mqttClient.on('connect', () => { mqttReady = true; });
+        mqttClient.on('close', () => { mqttReady = false; });
+        mqttClient.on('error', () => { /* keep trying */ });
       } catch { mqttClient = null; }
-      return mqttClient;
     }
 
     function publishMqtt(payload) {
-      const c = ensureMqtt();
-      if (!c) return;
-      const send = () => c.publish(MQTT_TOPIC, JSON.stringify(payload));
-      if (c.connected) send();
-      else c.once('connect', send);
+      if (!mqttClient) return;
+      const msg = JSON.stringify(payload);
+      // QoS 1 so the broker acknowledges delivery; publish immediately if
+      // connected, otherwise send as soon as the connection comes up.
+      if (mqttReady && mqttClient.connected) {
+        mqttClient.publish(MQTT_TOPIC, msg, { qos: 1 });
+      } else {
+        mqttClient.once('connect', () =>
+          mqttClient.publish(MQTT_TOPIC, msg, { qos: 1 }),
+        );
+      }
+    }
+
+    // Start connecting right away.
+    initMqtt();
+
+    // Small visible relay-status indicator so you can confirm the phone is
+    // connected to the cross-device relay BEFORE triggering an alert.
+    const relayStatus = document.createElement('div');
+    relayStatus.style.cssText =
+      'position:fixed;top:8px;right:12px;font-size:11px;color:#6b7280;z-index:99;';
+    relayStatus.textContent = 'relay: connecting…';
+    document.body.appendChild(relayStatus);
+    if (mqttClient) {
+      mqttClient.on('connect', () => { relayStatus.textContent = 'relay: live ✓'; });
+      mqttClient.on('close', () => { relayStatus.textContent = 'relay: reconnecting…'; });
+      mqttClient.on('error', () => { relayStatus.textContent = 'relay: offline'; });
+    } else {
+      relayStatus.textContent = 'relay: unavailable';
     }
 
     document.getElementById('build-btn').onclick = () => buildAlert();
