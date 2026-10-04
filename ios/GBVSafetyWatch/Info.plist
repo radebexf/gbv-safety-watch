@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>GBV Safety Watch</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>CFBundleSignature</key>
+	<string>????</string>
+	<key>CFBundleVersion</key>
+	<string>1</string>
+
+	<!-- ── Background Modes (Required: 10.3) ──────────────────────────────────
+	     bluetooth-central: Allows the app to communicate with BLE peripherals
+	                        (Da Fit smartwatch) while in the background.
+	                        Required by react-native-ble-plx for background BLE.
+	     location:          Allows react-native-geolocation-service to receive
+	                        location updates in the background for continuous
+	                        GPS coordinate caching during active monitoring.
+	  ──────────────────────────────────────────────────────────────────────── -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>bluetooth-central</string>
+		<string>location</string>
+	</array>
+
+	<!-- ── Permission Usage Descriptions ─────────────────────────────────────
+	     iOS requires a human-readable string for every permission requested.
+	     These strings appear in the system permission dialog. Plain-language
+	     rationale screens (Req 10.3) are shown inside the app before the
+	     system dialog is presented.
+	  ──────────────────────────────────────────────────────────────────────── -->
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>GBV Safety Watch needs Bluetooth to connect to your smartwatch and receive heart rate and wrist sensor data continuously, even when the app is in the background.</string>
+
+	<key>NSBluetoothPeripheralUsageDescription</key>
+	<string>GBV Safety Watch needs Bluetooth to connect to your smartwatch for heart rate monitoring and safety alerts.</string>
+
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>GBV Safety Watch needs your location at all times so it can include accurate GPS coordinates in emergency alerts sent to your contacts, even when the app is in the background.</string>
+
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>GBV Safety Watch needs your location at all times so it can include accurate GPS coordinates in emergency alerts sent to your contacts.</string>
+
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>GBV Safety Watch needs your location to include GPS coordinates in emergency alerts sent to your emergency contacts.</string>
+
+	<!-- ── App Transport Security ─────────────────────────────────────────── -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSExceptionDomains</key>
+		<dict>
+			<key>localhost</key>
+			<dict>
+				<key>NSExceptionAllowsInsecureHTTPLoads</key>
+				<true/>
+			</dict>
+		</dict>
+	</dict>
+
+	<!-- ── Launch Screen ──────────────────────────────────────────────────── -->
+	<key>UILaunchStoryboardName</key>
+	<string>LaunchScreen</string>
+
+	<!-- ── Main Storyboard ────────────────────────────────────────────────── -->
+	<key>UIMainStoryboardFile</key>
+	<string></string>
+
+	<!-- ── View Controller ────────────────────────────────────────────────── -->
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+
+	<!-- ── Supported Interface Orientations ───────────────────────────────── -->
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+
+	<!-- ── Requires full screen (iPad) ───────────────────────────────────── -->
+	<key>UIRequiresFullScreen</key>
+	<true/>
+</dict>
+</plist>
