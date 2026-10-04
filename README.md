@@ -47,6 +47,21 @@ When safety monitoring is active, the system:
 No cloud server is required — alerts are sent directly from the phone's SIM, so no
 health or location data is transmitted to any third party.
 
+### SMS sending behaviour by platform (important)
+
+How the alert SMS is sent depends on the operating system — this is an OS
+constraint, not a limitation of this code:
+
+| Platform | Automatic send (no user tap)? | Notes |
+|---|---|---|
+| **Android** | ✅ **Yes** | Uses `SmsManager.sendTextMessage` with the `SEND_SMS` permission — sends silently in the background, even with the screen off. Ideal for a safety app. |
+| **iOS** | ❌ No | Apple **forbids** any third-party app from sending SMS silently. `MFMessageComposeViewController` always shows the Messages screen and requires the user to tap send. There is no workaround. |
+| **Web demo** | ❌ No | Browsers cannot send SMS at all; the demo opens the phone's Messaging app pre-filled and you tap send. |
+
+**Implication:** for a true hands-free panic alert, **Android is the primary
+target platform.** iOS can carry the app but will always require a confirmation
+tap for the SMS. This is worth knowing before relying on it.
+
 ---
 
 ## Project status — honest summary
@@ -87,16 +102,25 @@ Smartwatch (BLE)  ──►  BluetoothManager  ──►  HeartRateMonitor ─�
   modules.
 ---
 
-## Try it in 2 minutes (no app build needed)
+## Live demos (no install needed)
 
-If you have a Chrome/Edge browser and a compatible BLE heart-rate watch, you can
-see the core sensing work **right now**:
+These run in the browser so you can see the system working right now, hosted free
+on GitHub Pages:
 
-👉 **[Web Bluetooth demo →](web-bluetooth-demo/)**
+| Demo | Link | What it shows |
+|---|---|---|
+| 🏠 **Demo hub** | [Open](https://radebexf.github.io/gbv-safety-watch/) | Landing page linking all demos |
+| ❤️ **Heart rate & watch probe** | [Open](https://radebexf.github.io/gbv-safety-watch/web-bluetooth-demo/index.html) | Connect a BLE watch, stream live heart rate, probe its services (Chrome/Edge only) |
+| 🚨 **SMS alert + panic trigger** | [Open](https://radebexf.github.io/gbv-safety-watch/web-bluetooth-demo/sms-test.html) | Build the real alert message with live GPS, triple-tap panic trigger, simulate every trigger with the cancel countdown, send a real SMS (works on iPhone) |
+| 📡 **Alert receiver dashboard** | [Open](https://radebexf.github.io/gbv-safety-watch/web-bluetooth-demo/receiver.html) | Contact/responder view that lights up with the alert + map pin (cross-device via a demo relay) |
 
-This is the one part proven on real hardware. It reads live heart rate and can
-probe your watch's Bluetooth services. (Web Bluetooth does not work in Safari or
-on iPhone — use Chrome/Edge on Windows, macOS, or Android.)
+**Heart-rate reading is proven on real hardware** (a MOYOUNG "GPS Fit Fuel" watch).
+Note: the heart-rate demo needs **Chrome/Edge** (Web Bluetooth) — not Safari/iPhone.
+The SMS and receiver demos work anywhere, including iPhone.
+
+> The cross-device receiver uses a free public demo relay (MQTT). It is for
+> demonstration only — unencrypted and on a public topic — so it must never carry
+> real personal data. The real app sends alerts by SMS with no relay at all.
 
 ---
 
