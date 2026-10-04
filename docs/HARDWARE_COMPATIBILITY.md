@@ -62,6 +62,36 @@ Bluetooth-disconnection trigger, phone manual trigger, phone GPS, and SMS alerts
 Watch GPS, wrist-removal, watch-screen countdown, and watch-button trigger are
 unavailable.
 
+### Why the watch button cannot trigger an alert on this device
+
+A watch-button (or "back button") panic trigger requires the watch to **send a
+button-press event to the phone over Bluetooth**. That event travels on the
+MOYOUNG command/notify channel (`0xFEE1` / `0xFEE2` on service `0xFEE0`). Because
+this watch does **not expose that service at all**, its physical buttons only
+control the watch's own on-screen UI — those presses never leave the device.
+There is therefore no data path for a watch-button trigger on this hardware, and
+no amount of app code can create one.
+
+**Empirically confirmed.** We did not just infer this from the service list — we
+tested it. Using the "Sniff button presses" tool in the
+[Web Bluetooth demo](../web-bluetooth-demo/index.html), we subscribed to *every*
+notify/indicate-capable characteristic the watch exposes and then pressed every
+physical button repeatedly. **Zero notifications arrived on any characteristic.**
+Heart-rate data streams continuously (proving the subscription mechanism works),
+but button presses produce nothing over BLE. This is definitive for this model.
+
+**Portable alternative (works on this hardware):** a phone-side **triple-tap
+panic gesture** — tap a target 3 times within 2 seconds — fires a manual alert.
+This is demonstrated in the [SMS test page](../web-bluetooth-demo/sms-test.html)
+and mirrors the real app's phone manual trigger (Requirement 6.4). It works on
+both iOS and Android regardless of watch model.
+
+**Watches that CAN support a button trigger:** a MOYOUNG/Da Fit model that
+exposes the `0xFEE0` command service can deliver button/wrist events. The app's
+`BluetoothManager` already includes `subscribeWristStatus` and manual-trigger
+wiring (spec task 11), and capability detection enables that path automatically
+when such a watch connects.
+
 ---
 
 ## Help us expand this list

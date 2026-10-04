@@ -100,6 +100,17 @@
     </div>
   </div>
 
+  <div class="card">
+    <button id="sniff-btn" disabled style="background:#7a4d1f;">Sniff button presses</button>
+    <div style="color:#8a93a2;font-size:12px;margin-top:8px;line-height:17px;">
+      Subscribes to EVERY notify/indicate characteristic the watch exposes, then
+      logs any raw bytes that arrive. After clicking, <b>press the watch's physical
+      buttons repeatedly</b> and watch the log. If bytes appear on a button press,
+      that characteristic is a usable button channel. If nothing appears across all
+      buttons, this watch does not report button presses over Bluetooth.
+    </div>
+  </div>
+
   <div class="card hr">
     <div class="label">Live Heart Rate</div>
     <div><span class="value" id="bpm">—</span><span class="unit"> bpm</span></div>
@@ -129,6 +140,8 @@
     const logEl = document.getElementById('log');
     const connectBtn = document.getElementById('connect-btn');
     const probeBtn = document.getElementById('probe-btn');
+    const sniffBtn = document.getElementById('sniff-btn');
+    let sniffing = false;
 
     let device = null;
     let gattServer = null;
@@ -213,6 +226,7 @@
         connectBtn.classList.add('danger');
         connectBtn.onclick = disconnect;
         probeBtn.disabled = false;
+        sniffBtn.disabled = false;
 
         // Try to subscribe to the standard Heart Rate service. The watch may
         // not expose it (or may gate it behind the MOYOUNG proprietary service),
@@ -254,9 +268,60 @@
       }
       gattServer = null;
       probeBtn.disabled = true;
+      sniffBtn.disabled = true;
+      sniffing = false;
       sampleCount = 0;
       bpmEl.textContent = '—';
       countEl.textContent = '0 samples received';
+    }
+
+    /**
+     * Button-press sniffer: subscribe to EVERY notify/indicate-capable
+     * characteristic across all services and log any raw bytes that arrive.
+     * The user then presses the watch buttons; any resulting notifications
+     * reveal whether (and where) the watch reports button events over BLE.
+     *
+     * Heart-rate (0x2A37) notifications are suppressed from the log so the
+     * continuous HR stream does not drown out a possible button event.
+     */
+    async function sniffButtons() {
+      if (!gattServer || sniffing) return;
+      sniffing = true;
+      sniffBtn.disabled = true;
+      sniffBtn.textContent = 'Sniffing… press watch buttons now';
+      try {
+        const services = await gattServer.getPrimaryServices();
+        let subscribed = 0;
+        for (const s of services) {
+          let chars = [];
+          try { chars = await s.getCharacteristics(); } catch { continue; }
+          for (const c of chars) {
+            if (!(c.properties.notify || c.properties.indicate)) continue;
+            // Skip the HR measurement characteristic to avoid log spam.
+            const isHr = c.uuid.toLowerCase().startsWith('00002a37');
+            try {
+              await c.startNotifications();
+              const label = c.uuid.split('-')[0];
+              c.addEventListener('characteristicvaluechanged', ev => {
+                if (isHr) return; // ignore the continuous HR stream
+                log('⚡ ' + label + ' ← ' + bytesToHex(ev.target.value));
+              });
+              subscribed += 1;
+              if (!isHr) log('listening on ' + c.uuid);
+            } catch (e) {
+              log('could not subscribe ' + c.uuid + ': ' + e.message);
+            }
+          }
+        }
+        log('=== sniffing ' + subscribed + ' characteristic(s). Press every watch button a few times. ===');
+        setStatus('Sniffing button presses — press the watch buttons and watch the log.');
+        sniffBtn.textContent = 'Sniffing… (press watch buttons)';
+      } catch (err) {
+        log('sniff error: ' + err.message);
+        sniffing = false;
+        sniffBtn.disabled = false;
+        sniffBtn.textContent = 'Sniff button presses';
+      }
     }
 
     /**
@@ -350,6 +415,7 @@
 
     connectBtn.onclick = connect;
     probeBtn.onclick = probe;
+    sniffBtn.onclick = sniffButtons;
   </script>
 </body>
 </html>

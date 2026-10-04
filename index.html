@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GBV Safety Watch — POC Demos</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0f1115; color: #e6e9ef; padding: 24px;
+      max-width: 640px; margin: 0 auto;
+    }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .sub { color: #8a93a2; font-size: 14px; margin-bottom: 24px; line-height: 20px; }
+    a.tile {
+      display: block; background: #1a1e27; border: 1px solid #243040; border-radius: 12px;
+      padding: 18px; margin-bottom: 14px; text-decoration: none; color: #e6e9ef;
+    }
+    a.tile:active { background: #232834; }
+    a.tile .t { font-size: 17px; font-weight: 700; color: #6ea8fe; }
+    a.tile .d { font-size: 13px; color: #8a93a2; margin-top: 4px; line-height: 18px; }
+    .note {
+      background: #2a2113; border: 1px solid #5c4a1e; color: #e8c879; font-size: 13px;
+      line-height: 19px; border-radius: 10px; padding: 12px 14px; margin-top: 10px;
+    }
+    .foot { color: #6b7280; font-size: 12px; margin-top: 24px; line-height: 18px; }
+  </style>
+</head>
+<body>
+  <h1>🛡️ GBV Safety Watch</h1>
+  <div class="sub">
+    Open-source proof of concept — a smartwatch + app that detects distress and
+    alerts emergency contacts. These are the browser demos.
+  </div>
+
+  <a class="tile" href="web-bluetooth-demo/index.html">
+    <div class="t">❤️ Heart Rate &amp; Watch Probe →</div>
+    <div class="d">Connect a BLE smartwatch, stream live heart rate, and probe its
+      Bluetooth services. (Chrome/Edge only — not iPhone.)</div>
+  </a>
+
+  <a class="tile" href="web-bluetooth-demo/sms-test.html">
+    <div class="t">🚨 SMS Alert Test &amp; Panic Trigger →</div>
+    <div class="d">Build the real alert message with live GPS, trigger via triple-tap,
+      and send a real SMS through your phone. (Works on iPhone.)</div>
+  </a>
+
+  <a class="tile" href="web-bluetooth-demo/receiver.html">
+    <div class="t">📡 Alert Receiver Screen →</div>
+    <div class="d">A contact / responder dashboard that lights up when an alert is
+      triggered (same browser).</div>
+  </a>
+
+  <div class="note">
+    These are demos, not the finished product. Real automatic SMS, background
+    monitoring, and on-device GPS live in the native app — see the
+    <a href="https://github.com/radebexf/gbv-safety-watch" style="color:#e8c879;">GitHub repo</a>.
+  </div>
+
+  <div class="foot">
+    MIT licensed. Built as a non-commercial POC for the safety of people at risk of
+    Gender-Based Violence. Contributions welcome.
+  </div>
+</body>
+</html>

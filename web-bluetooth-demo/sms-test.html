@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GBV Safety Watch — SMS Alert Test</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
+      background: #0f1115; color: #e6e9ef; padding: 24px;
+      max-width: 640px; margin: 0 auto;
+    }
+    h1 { font-size: 22px; margin: 0 0 2px; }
+    .sub { color: #8a93a2; font-size: 13px; margin-bottom: 20px; }
+    .card { background: #1a1e27; border-radius: 12px; padding: 16px; margin-bottom: 16px; border: 1px solid #243040; }
+    label { display: block; font-size: 13px; color: #c3cad6; margin: 10px 0 4px; }
+    input, select {
+      width: 100%; background: #0f1115; color: #e6e9ef; border: 1px solid #3a4150;
+      border-radius: 8px; padding: 10px 12px; font-size: 15px;
+    }
+    button {
+      background: #2f6fed; color: #fff; border: none; border-radius: 10px;
+      padding: 14px 18px; font-size: 16px; font-weight: 600; cursor: pointer; width: 100%;
+    }
+    button.green { background: #1f7a4d; }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .msg {
+      white-space: pre-wrap; font-family: Menlo, Consolas, monospace; font-size: 13px;
+      background: #0f1115; border: 1px solid #243040; border-radius: 8px; padding: 14px;
+      line-height: 19px; color: #d6dbe4;
+    }
+    .warn {
+      background: #2a2113; border: 1px solid #5c4a1e; color: #e8c879; font-size: 13px;
+      line-height: 19px; border-radius: 10px; padding: 12px 14px; margin-bottom: 16px;
+    }
+    .status { font-size: 13px; color: #8a93a2; margin-top: 8px; }
+    .row { display: flex; gap: 12px; }
+    .row > * { flex: 1; }
+    a.smslink {
+      display: block; text-align: center; background: #1f7a4d; color: #fff; text-decoration: none;
+      border-radius: 10px; padding: 14px; font-size: 16px; font-weight: 600; margin-top: 8px;
+    }
+    #qr { background:#fff; padding:12px; border-radius:10px; display:inline-block; margin-top:12px; }
+  </style>
+</head>
+<body>
+  <h1>GBV Safety Watch</h1>
+  <div class="sub">SMS alert test &middot; builds the real alert message and opens your phone's Messaging app</div>
+
+  <div class="warn">
+    <b>How this works:</b> browsers cannot send SMS silently. This page builds the exact
+    alert message the real app would send, then creates an <code>sms:</code> link that opens
+    your phone's Messaging app pre-filled with the recipient and message — you tap send.
+    <br><br>
+    The <b>sms: link only works on a phone</b>, not a laptop. If you're on a laptop, scan the
+    QR code with your phone to open this page there, or email yourself the link.
+  </div>
+
+  <div class="card" style="border-color:#1f7a4d;">
+    <b>Live alert receiver:</b> open the
+    <a href="receiver.html" target="_blank" style="color:#6ee7a8;">Alert Receiver screen</a>
+    in another tab. When you build/trigger an alert here, it appears there instantly with a
+    map pin — a preview of a contact-facing / responder dashboard.
+  </div>
+
+  <div class="card" style="text-align:center;border-color:#5c1e2a;">
+    <div style="font-size:13px;color:#8a93a2;margin-bottom:10px;">
+      Discreet panic trigger — tap the circle <b>3 times within 2 seconds</b>
+    </div>
+    <div id="panic" style="
+      width:120px;height:120px;border-radius:50%;margin:0 auto;
+      background:#2a1419;border:2px solid #d64545;color:#ff8a9a;
+      display:flex;align-items:center;justify-content:center;
+      font-size:13px;font-weight:600;cursor:pointer;user-select:none;
+      -webkit-user-select:none;touch-action:manipulation;">
+      TAP 3×
+    </div>
+    <div class="status" id="panic-status">Taps: 0</div>
+  </div>
+
+  <div class="card">
+    <label>Your name (appears in the alert)</label>
+    <input id="name" value="Test User" />
+
+    <label>Emergency contact phone number (with country code, e.g. +27...)</label>
+    <input id="phone" placeholder="+27XXXXXXXXX" />
+
+    <label>Trigger type</label>
+    <select id="trigger">
+      <option value="heart_rate_anomaly">heart rate anomaly</option>
+      <option value="watch_removal">watch removal</option>
+      <option value="bluetooth_disconnection">bluetooth disconnection</option>
+      <option value="manual" selected>manual trigger</option>
+    </select>
+
+    <div class="row" style="margin-top:14px;">
+      <button class="green" id="locate-btn">Use my live GPS</button>
+      <button id="build-btn">Build alert message</button>
+    </div>
+    <div class="status" id="loc-status">Location: not acquired yet (message will say "no location data").</div>
+  </div>
+
+  <div class="card">
+    <label>Generated alert message</label>
+    <div class="msg" id="preview">(click "Build alert message")</div>
+    <a class="smslink" id="sms-link" style="display:none;">📱 Open Messaging app to send</a>
+    <button id="copy-btn" style="margin-top:8px;background:#3a4150;">Copy message</button>
+    <div style="text-align:center;"><div id="qr"></div></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script>
+    // ── Mirror of the real app's TRIGGER_LABELS (src/alert/AlertPipeline.ts) ──
+    const TRIGGER_LABELS = {
+      heart_rate_anomaly: 'heart rate anomaly',
+      watch_removal: 'watch removal',
+      bluetooth_disconnection: 'bluetooth disconnection',
+      manual: 'manual trigger',
+    };
+
+    let coords = null; // { latitude, longitude, acquiredAt, isFresh }
+
+    const nameEl = document.getElementById('name');
+    const phoneEl = document.getElementById('phone');
+    const triggerEl = document.getElementById('trigger');
+    const locStatus = document.getElementById('loc-status');
+    const preview = document.getElementById('preview');
+    const smsLink = document.getElementById('sms-link');
+    const qrBox = document.getElementById('qr');
+
+    /**
+     * Exact reproduction of assembleAlertMessage() from the real app
+     * (src/alert/AlertPipeline.ts) so this test matches production output.
+     */
+    function assembleAlertMessage(name, triggerType, c, triggeredAt) {
+      const triggerLabel = TRIGGER_LABELS[triggerType];
+      const timeUtc = new Date(triggeredAt).toISOString();
+
+      let locationBlock;
+      if (!c) {
+        locationBlock = 'Note: No location data available';
+      } else {
+        const locationLine = 'Location: ' + c.latitude + ', ' + c.longitude;
+        const mapLine = 'Map: https://maps.google.com/?q=' + c.latitude + ',' + c.longitude;
+        if (c.isFresh) {
+          locationBlock = locationLine + '\n' + mapLine;
+        } else {
+          const acquiredAtUtc = new Date(c.acquiredAt).toISOString();
+          locationBlock = locationLine + '\n' + mapLine +
+            '\nNote: Location last recorded at ' + acquiredAtUtc;
+        }
+      }
+
+      return (
+        '🚨 SAFETY ALERT – ' + name + '\n' +
+        '\n' +
+        'Trigger: ' + triggerLabel + '\n' +
+        'Time (UTC): ' + timeUtc + '\n' +
+        locationBlock + '\n' +
+        '\n' +
+        'This message was sent automatically by GBV Safety Watch.'
+      );
+    }
+
+    document.getElementById('locate-btn').onclick = () => {
+      if (!navigator.geolocation) {
+        locStatus.textContent = 'Geolocation not supported in this browser.';
+        return;
+      }
+      locStatus.textContent = 'Acquiring GPS… (allow location when prompted)';
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          coords = {
+            latitude: +pos.coords.latitude.toFixed(6),
+            longitude: +pos.coords.longitude.toFixed(6),
+            acquiredAt: Date.now(),
+            isFresh: true,
+          };
+          locStatus.textContent =
+            '✓ GPS acquired: ' + coords.latitude + ', ' + coords.longitude +
+            ' (accuracy ' + Math.round(pos.coords.accuracy) + ' m)';
+        },
+        err => {
+          locStatus.textContent = 'GPS error: ' + err.message +
+            ' — message will note "no location data".';
+          coords = null;
+        },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 },
+      );
+    };
+
+    /**
+     * Build the alert message + sms: link + QR. Shared by the "Build" button
+     * and the triple-tap panic trigger. When `triggerOverride` is provided
+     * (e.g. 'manual' from the panic tap) it is used instead of the dropdown.
+     */
+    function buildAlert(triggerOverride) {
+      const name = (nameEl.value || 'User').trim();
+      const phone = (phoneEl.value || '').replace(/[^\d+]/g, '');
+      const trigger = triggerOverride || triggerEl.value;
+      const message = assembleAlertMessage(name, trigger, coords, Date.now());
+
+      preview.textContent = message;
+
+      if (phone) {
+        // sms: URI. The ?&body= form maximises cross-platform compatibility
+        // (iOS prefers "&body=", Android "?body="). We use "?&body=" which works on both.
+        const uri = 'sms:' + phone + '?&body=' + encodeURIComponent(message);
+        smsLink.href = uri;
+        smsLink.style.display = 'block';
+
+        // Build a QR of the sms: link so a laptop user can scan it on their phone.
+        qrBox.innerHTML = '';
+        try {
+          const qr = qrcode(0, 'M');
+          qr.addData(uri);
+          qr.make();
+          qrBox.innerHTML = qr.createImgTag(4);
+        } catch (e) {
+          qrBox.textContent = '(QR unavailable offline)';
+        }
+      } else {
+        smsLink.style.display = 'none';
+        qrBox.innerHTML = '';
+        locStatus.textContent = 'Enter a phone number to generate the send link.';
+      }
+
+      // Broadcast the alert to any open Receiver screen (same browser).
+      broadcastAlert({
+        name: name,
+        triggerType: trigger,
+        triggeredAt: Date.now(),
+        coordinates: coords
+          ? { latitude: coords.latitude, longitude: coords.longitude }
+          : null,
+      });
+
+      return phone;
+    }
+
+    /**
+     * Push the alert to the Receiver page via BroadcastChannel (instant) and
+     * localStorage (fallback + persistence) so a receiver.html tab lights up.
+     */
+    function broadcastAlert(payload) {
+      try {
+        const bc = new BroadcastChannel('gbv-safety-alert');
+        bc.postMessage({ type: 'alert', payload: payload });
+        bc.close();
+      } catch { /* older browser — localStorage fallback below still works */ }
+      try {
+        // Writing a fresh value triggers a 'storage' event in other tabs.
+        localStorage.setItem('gbv-safety-alert', JSON.stringify(payload));
+      } catch {}
+    }
+
+    document.getElementById('build-btn').onclick = () => buildAlert();
+
+    // ── Discreet triple-tap panic trigger ──────────────────────────────────
+    // Three taps within a 2-second rolling window fire the alert as a 'manual'
+    // trigger. This mirrors the phone-side manual trigger in the real app
+    // (Requirement 6.4) and is the portable alternative to a watch button,
+    // since this watch cannot send button events over BLE.
+    const TAP_WINDOW_MS = 2000;
+    const TAPS_REQUIRED = 3;
+    let tapTimes = [];
+    const panicEl = document.getElementById('panic');
+    const panicStatus = document.getElementById('panic-status');
+
+    function registerTap() {
+      const now = Date.now();
+      // Keep only taps within the rolling window.
+      tapTimes = tapTimes.filter(t => now - t < TAP_WINDOW_MS);
+      tapTimes.push(now);
+      panicStatus.textContent = 'Taps: ' + tapTimes.length +
+        (tapTimes.length < TAPS_REQUIRED ? ' (need ' + TAPS_REQUIRED + ')' : '');
+
+      if (tapTimes.length >= TAPS_REQUIRED) {
+        tapTimes = [];
+        panicStatus.textContent = '🚨 PANIC TRIGGERED — building alert…';
+        const phone = buildAlert('manual');
+        // On a phone, jump straight to Messaging so the user can send fast.
+        if (phone && smsLink.href) {
+          // Small delay so the preview renders before navigation.
+          setTimeout(() => { window.location.href = smsLink.href; }, 150);
+        } else if (!phone) {
+          panicStatus.textContent = '🚨 PANIC — enter a contact number first.';
+        }
+      }
+    }
+
+    // Use pointer/touch + click without double-firing on touch devices.
+    panicEl.addEventListener('click', registerTap);
+
+    document.getElementById('copy-btn').onclick = async () => {
+      try {
+        await navigator.clipboard.writeText(preview.textContent);
+        document.getElementById('copy-btn').textContent = 'Copied ✓';
+        setTimeout(() => { document.getElementById('copy-btn').textContent = 'Copy message'; }, 1500);
+      } catch {
+        /* clipboard may be blocked; ignore */
+      }
+    };
+  </script>
+</body>
+</html>
