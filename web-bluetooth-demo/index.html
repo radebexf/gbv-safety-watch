@@ -115,12 +115,42 @@
     <div class="label">Live Heart Rate</div>
     <div><span class="value" id="bpm">—</span><span class="unit"> bpm</span></div>
     <div class="meta" id="count">0 samples received</div>
+    <div class="meta" id="baseline-info" style="margin-top:4px;">baseline: not set</div>
+  </div>
+
+  <div class="card" style="border-color:#5c4a1e;">
+    <div style="font-size:14px;font-weight:700;color:#e8c879;">Live anomaly → alert</div>
+    <div style="font-size:12px;color:#8a93a2;margin:6px 0 12px;line-height:17px;">
+      Once a baseline is established from your live heart rate, two consecutive
+      readings past the threshold auto-fire an alert (with a cancel countdown).
+      This is the real watch-driven flow. Alerts also appear on the
+      <a href="receiver.html" target="_blank" style="color:#6ee7a8;">Receiver screen</a>.
+    </div>
+    <label style="display:block;font-size:12px;color:#c3cad6;">Your name</label>
+    <input id="hr-name" value="Test User" style="width:100%;background:#0f1115;color:#e6e9ef;border:1px solid #3a4150;border-radius:8px;padding:9px;margin:3px 0 8px;" />
+    <label style="display:block;font-size:12px;color:#c3cad6;">Threshold (% from baseline)</label>
+    <input id="hr-threshold" type="number" min="10" max="100" value="40" style="width:100%;background:#0f1115;color:#e6e9ef;border:1px solid #3a4150;border-radius:8px;padding:9px;margin:3px 0 8px;" />
+    <label style="display:block;font-size:12px;color:#c3cad6;">False Positive Window (seconds)</label>
+    <input id="hr-fpw" type="number" min="5" max="60" value="15" style="width:100%;background:#0f1115;color:#e6e9ef;border:1px solid #3a4150;border-radius:8px;padding:9px;margin:3px 0 10px;" />
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      <button id="arm-btn" style="flex:1;background:#1f7a4d;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;">Arm monitoring</button>
+      <button id="force-btn" style="flex:1;background:#7a2f3f;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;">Force anomaly</button>
+    </div>
+    <button id="manual-btn" style="width:100%;background:#d64545;color:#fff;border:none;border-radius:8px;padding:12px;font-weight:600;cursor:pointer;margin-top:8px;">🚨 Manual trigger (panic)</button>
+    <div id="arm-status" class="meta" style="margin-top:8px;">Monitoring: off</div>
+    <div id="hr-countdown" style="display:none;margin-top:12px;text-align:center;">
+      <div style="font-size:13px;color:#e8c879;">Alert pending — sending in</div>
+      <div id="hr-count-num" style="font-size:44px;font-weight:800;color:#ff8a9a;">15</div>
+      <button id="hr-cancel" style="background:#1f7a4d;color:#fff;border:none;border-radius:8px;padding:10px 16px;font-weight:600;cursor:pointer;">Cancel (I'm safe)</button>
+    </div>
   </div>
 
   <div class="card">
     <div class="log-header">Event log</div>
     <div id="log">No events yet.</div>
   </div>
+
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
 
   <script>
     // Standard Bluetooth SIG Heart Rate service + measurement characteristic.
@@ -187,6 +217,54 @@
       bpmEl.textContent = bpm;
       sampleCount += 1;
       countEl.textContent = sampleCount + ' samples received';
+      handleBpmForAnomaly(bpm);
+    }
+
+    // ── Live anomaly detection → alert (mirrors the real app) ──────────────
+    const BASELINE_TARGET = 10;     // readings needed before a baseline is set
+    let baselineSamples = [];       // recent non-distress BPM values
+    let baselineMedian = null;      // current baseline
+    let prevBpm = null;             // previous reading (need 2 consecutive)
+    let armed = false;              // monitoring on/off
+    let alertPending = false;       // FPW countdown running
+    let hrCountdownTimer = null;
+
+    function median(arr) {
+      const s = [...arr].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+    }
+
+    function handleBpmForAnomaly(bpm) {
+      if (bpm < 20 || bpm > 300) return; // discard invalid (same as real app)
+
+      // Build/refresh baseline from non-distress samples.
+      if (!alertPending) {
+        baselineSamples.push(bpm);
+        if (baselineSamples.length > 300) baselineSamples.shift();
+        if (baselineSamples.length >= BASELINE_TARGET) {
+          baselineMedian = median(baselineSamples);
+          document.getElementById('baseline-info').textContent =
+            'baseline: ' + Math.round(baselineMedian) + ' bpm (' + baselineSamples.length + ' samples)';
+        } else {
+          document.getElementById('baseline-info').textContent =
+            'baseline: building… (' + baselineSamples.length + '/' + BASELINE_TARGET + ')';
+        }
+      }
+
+      if (armed && baselineMedian !== null && !alertPending) {
+        const t = (parseInt(document.getElementById('hr-threshold').value, 10) || 40) / 100;
+        const high = baselineMedian * (1 + t);
+        const low = baselineMedian * (1 - t);
+        const crossed = bpm > high || bpm < low;
+        const prevCrossed = prevBpm !== null && (prevBpm > high || prevBpm < low);
+        if (crossed && prevCrossed) {
+          log('⚠️ anomaly: two consecutive readings past threshold (' +
+            prevBpm + ', ' + bpm + ' vs baseline ' + Math.round(baselineMedian) + ')');
+          startHrAlert('heart_rate_anomaly');
+        }
+      }
+      prevBpm = bpm;
     }
 
     async function connect() {
@@ -412,6 +490,124 @@
         probeBtn.disabled = false;
       }
     }
+
+    // ── Alert dispatch: countdown → broadcast to receiver (+ relay) ────────
+    const TRIGGER_LABELS = {
+      heart_rate_anomaly: 'heart rate anomaly',
+      watch_removal: 'watch removal',
+      bluetooth_disconnection: 'bluetooth disconnection',
+      manual: 'manual trigger',
+    };
+    let lastCoords = null;
+
+    function startHrAlert(triggerType) {
+      if (alertPending) return;
+      alertPending = true;
+      let remaining = Math.max(5, Math.min(60, parseInt(document.getElementById('hr-fpw').value, 10) || 15));
+      const cd = document.getElementById('hr-countdown');
+      const num = document.getElementById('hr-count-num');
+      num.textContent = remaining;
+      cd.style.display = 'block';
+      setStatus('⚠️ Alert pending (' + TRIGGER_LABELS[triggerType] + ') — cancel if safe.');
+      log('alert pending: ' + TRIGGER_LABELS[triggerType] + ' — ' + remaining + 's countdown');
+
+      clearInterval(hrCountdownTimer);
+      hrCountdownTimer = setInterval(() => {
+        remaining -= 1;
+        num.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(hrCountdownTimer);
+          hrCountdownTimer = null;
+          cd.style.display = 'none';
+          alertPending = false;
+          dispatchAlert(triggerType);
+        }
+      }, 1000);
+    }
+
+    function cancelHrAlert() {
+      clearInterval(hrCountdownTimer);
+      hrCountdownTimer = null;
+      document.getElementById('hr-countdown').style.display = 'none';
+      alertPending = false;
+      prevBpm = null; // avoid immediate re-trigger from the same spike
+      log('✓ alert cancelled within the False Positive Window — no alert sent');
+      setStatus('Alert cancelled. Monitoring continues.');
+    }
+
+    function dispatchAlert(triggerType) {
+      const name = (document.getElementById('hr-name').value || 'User').trim();
+      const payload = {
+        name: name,
+        triggerType: triggerType,
+        triggeredAt: Date.now(),
+        coordinates: lastCoords
+          ? { latitude: lastCoords.latitude, longitude: lastCoords.longitude }
+          : null,
+      };
+      log('🚨 ALERT DISPATCHED: ' + TRIGGER_LABELS[triggerType] +
+        (payload.coordinates ? ' @ ' + payload.coordinates.latitude + ',' + payload.coordinates.longitude : ' (no GPS)'));
+      setStatus('🚨 Alert sent to receiver. (' + TRIGGER_LABELS[triggerType] + ')');
+      broadcastAlert(payload);
+    }
+
+    // Try to grab a GPS fix for alerts (optional; falls back to no-location).
+    function refreshGps() {
+      if (!navigator.geolocation) return;
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          lastCoords = {
+            latitude: +pos.coords.latitude.toFixed(6),
+            longitude: +pos.coords.longitude.toFixed(6),
+          };
+          log('GPS acquired for alerts: ' + lastCoords.latitude + ', ' + lastCoords.longitude);
+        },
+        () => { /* ignore; alert will note no location */ },
+        { enableHighAccuracy: true, timeout: 15000, maximumAge: 60000 },
+      );
+    }
+
+    // ── Broadcast to receiver: BroadcastChannel + localStorage + MQTT relay ─
+    const MQTT_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const MQTT_TOPIC = 'gbv-safety-watch/radebexf/demo-alert';
+    let mqttClient = null;
+    try {
+      if (typeof mqtt !== 'undefined') {
+        mqttClient = mqtt.connect(MQTT_URL, { connectTimeout: 8000, reconnectPeriod: 4000, keepalive: 30 });
+      }
+    } catch { mqttClient = null; }
+
+    function broadcastAlert(payload) {
+      try { const bc = new BroadcastChannel('gbv-safety-alert'); bc.postMessage({ type: 'alert', payload }); bc.close(); } catch {}
+      try { localStorage.setItem('gbv-safety-alert', JSON.stringify(payload)); } catch {}
+      try {
+        if (mqttClient) {
+          const msg = JSON.stringify(payload);
+          if (mqttClient.connected) mqttClient.publish(MQTT_TOPIC, msg, { qos: 1 });
+          else mqttClient.once('connect', () => mqttClient.publish(MQTT_TOPIC, msg, { qos: 1 }));
+        }
+      } catch {}
+    }
+
+    // ── Arm / force / manual / cancel wiring ───────────────────────────────
+    document.getElementById('arm-btn').onclick = () => {
+      armed = !armed;
+      document.getElementById('arm-status').textContent = 'Monitoring: ' + (armed ? 'ON' : 'off');
+      document.getElementById('arm-btn').textContent = armed ? 'Disarm monitoring' : 'Arm monitoring';
+      document.getElementById('arm-btn').style.background = armed ? '#7a4d1f' : '#1f7a4d';
+      if (armed) { refreshGps(); log('monitoring armed'); } else { log('monitoring disarmed'); }
+    };
+    document.getElementById('force-btn').onclick = () => {
+      refreshGps();
+      log('force anomaly (demo): simulating a heart-rate anomaly');
+      startHrAlert('heart_rate_anomaly');
+    };
+    document.getElementById('manual-btn').onclick = () => {
+      refreshGps();
+      log('manual panic trigger');
+      startHrAlert('manual');
+    };
+    document.getElementById('hr-cancel').onclick = cancelHrAlert;
 
     connectBtn.onclick = connect;
     probeBtn.onclick = probe;
