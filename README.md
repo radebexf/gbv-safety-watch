@@ -85,10 +85,6 @@ Smartwatch (BLE)  ──►  BluetoothManager  ──►  HeartRateMonitor ─�
   lifecycle.
 - Every subsystem is dependency-injected and unit-testable without native
   modules.
-
-Full technical design: [`.kiro/specs/gbv-safety-watch/design.md`](../.kiro/specs/gbv-safety-watch/design.md)
-Requirements (EARS format): [`.kiro/specs/gbv-safety-watch/requirements.md`](../.kiro/specs/gbv-safety-watch/requirements.md)
-
 ---
 
 ## Try it in 2 minutes (no app build needed)
