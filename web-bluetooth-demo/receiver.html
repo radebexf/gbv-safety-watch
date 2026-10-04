@@ -95,6 +95,7 @@
     or responder dashboard.
   </div>
 
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script>
     const TRIGGER_LABELS = {
       heart_rate_anomaly: 'Heart rate anomaly',
@@ -167,6 +168,34 @@
       const last = localStorage.getItem('gbv-safety-alert');
       if (last) showAlert(JSON.parse(last));
     } catch {}
+
+    // ── Cross-device relay: subscribe to the same public MQTT topic the ─────
+    // sender publishes to, so this receiver lights up even on a DIFFERENT
+    // device (e.g. laptop receiver, phone trigger). DEMO ONLY — public broker,
+    // unencrypted; never carry real personal data over it in production.
+    const MQTT_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const MQTT_TOPIC = 'gbv-safety-watch/radebexf/demo-alert';
+    const relayStatus = document.createElement('div');
+    relayStatus.style.cssText = 'position:fixed;top:8px;right:12px;font-size:11px;color:#6b7280;';
+    relayStatus.textContent = 'relay: connecting…';
+    document.body.appendChild(relayStatus);
+
+    try {
+      if (typeof mqtt !== 'undefined') {
+        const client = mqtt.connect(MQTT_URL, { connectTimeout: 8000, reconnectPeriod: 5000 });
+        client.on('connect', () => {
+          relayStatus.textContent = 'relay: live ✓';
+          client.subscribe(MQTT_TOPIC);
+        });
+        client.on('message', (topic, msg) => {
+          try { showAlert(JSON.parse(msg.toString())); } catch {}
+        });
+        client.on('error', () => { relayStatus.textContent = 'relay: offline (same-browser only)'; });
+        client.on('close', () => { relayStatus.textContent = 'relay: reconnecting…'; });
+      } else {
+        relayStatus.textContent = 'relay: unavailable';
+      }
+    } catch { relayStatus.textContent = 'relay: unavailable'; }
   </script>
 </body>
 </html>

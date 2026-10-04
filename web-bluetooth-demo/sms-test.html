@@ -61,8 +61,9 @@
   <div class="card" style="border-color:#1f7a4d;">
     <b>Live alert receiver:</b> open the
     <a href="receiver.html" target="_blank" style="color:#6ee7a8;">Alert Receiver screen</a>
-    in another tab. When you build/trigger an alert here, it appears there instantly with a
-    map pin — a preview of a contact-facing / responder dashboard.
+    — in another tab, or <b>on another device</b> (e.g. your laptop). When you trigger an
+    alert here, it appears there with a map pin, a preview of a contact / responder dashboard.
+    Cross-device uses a free public demo relay (not for real data).
   </div>
 
   <div class="card" style="text-align:center;border-color:#5c1e2a;">
@@ -78,6 +79,27 @@
       TAP 3×
     </div>
     <div class="status" id="panic-status">Taps: 0</div>
+  </div>
+
+  <div class="card" style="border-color:#5c4a1e;">
+    <div style="font-size:14px;font-weight:700;color:#e8c879;margin-bottom:4px;">Simulate a trigger</div>
+    <div style="font-size:12px;color:#8a93a2;margin-bottom:12px;line-height:17px;">
+      Simulate each automatic trigger the real app detects. A False Positive Window
+      countdown runs first (the user can cancel a false alarm); if it reaches zero,
+      the alert is sent and shown on the receiver.
+    </div>
+    <div class="row" style="flex-wrap:wrap;gap:8px;">
+      <button class="sim" data-trigger="heart_rate_anomaly" style="background:#7a2f3f;">❤️ Heart-rate anomaly</button>
+      <button class="sim" data-trigger="watch_removal" style="background:#5a3f7a;">⌚ Watch removed</button>
+      <button class="sim" data-trigger="bluetooth_disconnection" style="background:#2f5a7a;">📶 Bluetooth lost</button>
+    </div>
+    <label style="margin-top:12px;">False Positive Window (seconds)</label>
+    <input id="fpw" type="number" min="5" max="60" value="15" />
+    <div id="countdown" style="display:none;margin-top:14px;text-align:center;">
+      <div style="font-size:13px;color:#e8c879;">Alert pending — sending in</div>
+      <div id="count-num" style="font-size:48px;font-weight:800;color:#ff8a9a;">15</div>
+      <button id="cancel-btn" style="background:#1f7a4d;">Cancel (I'm safe)</button>
+    </div>
   </div>
 
   <div class="card">
@@ -111,6 +133,7 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
+  <script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
   <script>
     // ── Mirror of the real app's TRIGGER_LABELS (src/alert/AlertPipeline.ts) ──
     const TRIGGER_LABELS = {
@@ -241,19 +264,50 @@
     }
 
     /**
-     * Push the alert to the Receiver page via BroadcastChannel (instant) and
-     * localStorage (fallback + persistence) so a receiver.html tab lights up.
+     * Push the alert to the Receiver page via three channels:
+     *  1. BroadcastChannel — instant, same browser, cross-tab.
+     *  2. localStorage      — fallback + persistence, same browser.
+     *  3. MQTT over WebSocket (public broker) — CROSS-DEVICE, so a receiver on
+     *     another device (e.g. laptop) lights up when triggered from the phone.
+     *
+     * The MQTT path uses a free public demo broker and a shared topic. This is
+     * for DEMO ONLY — the data is unencrypted and the topic is guessable, so it
+     * must never carry real personal data in production. It degrades gracefully:
+     * if the broker is unreachable, same-browser channels still work.
      */
     function broadcastAlert(payload) {
       try {
         const bc = new BroadcastChannel('gbv-safety-alert');
         bc.postMessage({ type: 'alert', payload: payload });
         bc.close();
-      } catch { /* older browser — localStorage fallback below still works */ }
+      } catch {}
       try {
-        // Writing a fresh value triggers a 'storage' event in other tabs.
         localStorage.setItem('gbv-safety-alert', JSON.stringify(payload));
       } catch {}
+      try {
+        publishMqtt(payload);
+      } catch {}
+    }
+
+    // ── Cross-device relay via public MQTT-over-WebSocket broker ────────────
+    const MQTT_URL = 'wss://broker.emqx.io:8084/mqtt';
+    const MQTT_TOPIC = 'gbv-safety-watch/radebexf/demo-alert';
+    let mqttClient = null;
+
+    function ensureMqtt() {
+      if (mqttClient || typeof mqtt === 'undefined') return mqttClient;
+      try {
+        mqttClient = mqtt.connect(MQTT_URL, { connectTimeout: 8000, reconnectPeriod: 0 });
+      } catch { mqttClient = null; }
+      return mqttClient;
+    }
+
+    function publishMqtt(payload) {
+      const c = ensureMqtt();
+      if (!c) return;
+      const send = () => c.publish(MQTT_TOPIC, JSON.stringify(payload));
+      if (c.connected) send();
+      else c.once('connect', send);
     }
 
     document.getElementById('build-btn').onclick = () => buildAlert();
@@ -293,6 +347,48 @@
 
     // Use pointer/touch + click without double-firing on touch devices.
     panicEl.addEventListener('click', registerTap);
+
+    // ── Trigger simulation with False Positive Window countdown ────────────
+    // Mirrors the real app's alert_pending state (Requirements 2.3–2.6): a
+    // configurable countdown runs; if the user cancels, no alert is sent; if it
+    // expires, the alert is built, broadcast to the receiver, and the SMS link
+    // is prepared.
+    const countdownEl = document.getElementById('countdown');
+    const countNumEl = document.getElementById('count-num');
+    let countdownTimer = null;
+
+    function startSimulation(triggerType) {
+      // Set the dropdown so the built message matches the simulated trigger.
+      triggerEl.value = triggerType;
+
+      let remaining = Math.max(5, Math.min(60, parseInt(document.getElementById('fpw').value, 10) || 15));
+      countNumEl.textContent = remaining;
+      countdownEl.style.display = 'block';
+
+      clearInterval(countdownTimer);
+      countdownTimer = setInterval(() => {
+        remaining -= 1;
+        countNumEl.textContent = remaining;
+        if (remaining <= 0) {
+          clearInterval(countdownTimer);
+          countdownTimer = null;
+          countdownEl.style.display = 'none';
+          // FPW expired without cancellation → dispatch the alert.
+          buildAlert(triggerType);
+        }
+      }, 1000);
+    }
+
+    document.querySelectorAll('.sim').forEach(btn => {
+      btn.addEventListener('click', () => startSimulation(btn.getAttribute('data-trigger')));
+    });
+
+    document.getElementById('cancel-btn').onclick = () => {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+      countdownEl.style.display = 'none';
+      locStatus.textContent = '✓ Alert cancelled within the False Positive Window — no SMS sent.';
+    };
 
     document.getElementById('copy-btn').onclick = async () => {
       try {
